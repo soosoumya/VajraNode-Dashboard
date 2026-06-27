@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VajraNode Tactical Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* --- CORE STYLES (Same as before) --- */
+        :root {
+            --bg-base: #0B0E14; --bg-panel: rgba(20, 25, 33, 0.6);
+            --border-glass: rgba(255, 255, 255, 0.08); --text-main: #E2E8F0;
+            --text-muted: #64748B; --accent-cyan: #00F0FF;
+            --accent-amber: #FFB000; --accent-green: #00E676;
+            --font-mono: 'Courier New', Courier, monospace;
+            --font-sans: 'Segoe UI', Roboto, Helvetica, sans-serif;
+        }
+        body {
+            margin: 0; padding: 20px; background-color: var(--bg-base);
+            background-image: radial-gradient(circle at 15% 50%, rgba(0, 240, 255, 0.03) 0%, transparent 50%),
+                              radial-gradient(circle at 85% 30%, rgba(255, 176, 0, 0.03) 0%, transparent 50%);
+            color: var(--text-main); font-family: var(--font-sans);
+            height: 100vh; box-sizing: border-box; display: grid;
+            grid-template-columns: 240px 1fr 320px; grid-template-rows: 60px 1fr; gap: 20px; overflow: hidden;
+        }
+        .panel {
+            background: var(--bg-panel); backdrop-filter: blur(12px); border: 1px solid var(--border-glass);
+            border-radius: 12px; padding: 20px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+        h1, h2, h3 { margin: 0; text-transform: uppercase; letter-spacing: 1px; }
+        .label { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; letter-spacing: 1.5px;}
+        .value { font-size: 1.8rem; font-family: var(--font-mono); margin: 8px 0; color: var(--text-main); }
+        .micro-data { font-size: 0.65rem; color: var(--text-muted); font-family: var(--font-mono); }
+        
+        /* Layout */
+        .top-nav { grid-column: 2 / -1; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-glass); padding-bottom: 15px; }
+        .status-badge { background: rgba(0, 230, 118, 0.1); color: var(--accent-green); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; border: 1px solid rgba(0, 230, 118, 0.3); }
+        .sidebar { grid-row: 1 / -1; display: flex; flex-direction: column; gap: 15px; }
+        .brand { font-size: 1.2rem; font-weight: 800; color: var(--accent-cyan); margin-bottom: 30px; }
+        
+        /* Interactive Nav Items */
+        .nav-item { padding: 12px 16px; border-radius: 8px; color: var(--text-muted); cursor: pointer; transition: all 0.2s ease; }
+        .nav-item.active { background: rgba(0, 240, 255, 0.1); color: var(--accent-cyan); border-left: 3px solid var(--accent-cyan); }
+        .nav-item:hover:not(.active) { background: rgba(255, 255, 255, 0.05); color: var(--text-main); }
+
+        /* View Switching Logic */
+        .view-section { display: none; flex-direction: column; gap: 20px; height: 100%; }
+        .view-section.active-view { display: flex; }
+        
+        .hero-chart { flex: 1; min-height: 300px; display: flex; flex-direction: column; }
+        .chart-container { flex: 1; position: relative; margin-top: 15px; }
+        .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+        .right-sidebar { display: flex; flex-direction: column; gap: 20px; }
+        
+        /* Telemetry & Logs */
+        .progress-container { margin-top: 15px; }
+        .progress-row { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.8rem; margin-bottom: 5px; }
+        .progress-bar-bg { width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-bottom: 15px;}
+        .progress-fill { height: 100%; border-radius: 2px; transition: width 0.1s ease-out; }
+        .fill-cyan { background: var(--accent-cyan); width: 0%; }
+        .fill-amber { background: var(--accent-amber); width: 0%; }
+        .fill-green { background: var(--accent-green); width: 0%; }
+        .event-log { flex: 1; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; max-height: 400px; }
+        .event-item { border-left: 2px solid var(--text-muted); padding-left: 12px; }
+        .event-item.warning { border-left-color: var(--accent-amber); }
+        .event-title { font-size: 0.85rem; font-weight: bold; margin-bottom: 4px; }
+        .event-time { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar panel">
+        <div class="brand">VAJRA-01<br><span style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal;">ACTIVE SESSION</span></div>
+        
+        <div class="nav-item active" onclick="switchTab('view-diagnostics', this)">Diagnostics</div>
+        <div class="nav-item" onclick="switchTab('view-network', this)">Network Uplink</div>
+        <div class="nav-item" onclick="switchTab('view-logs', this)">Raw Sensor Logs</div>
+        
+        <div style="margin-top: auto; border-top: 1px solid var(--border-glass); padding-top: 15px;">
+            <div class="label">OPERATOR</div>
+            <div style="font-weight: bold; margin-top: 5px;">Admin User</div>
+            <div class="micro-data">LVL 5 AUTH</div>
+        </div>
+    </div>
+
+    <div class="top-nav">
+        <h2 style="font-size: 1.2rem;">VAJRA-NODE | <span style="color: var(--text-muted);">CONTROL CENTER</span></h2>
+        <div class="status-badge" id="global-status">● SYSTEM ONLINE</div>
+    </div>
+
+    <div class="main-content" style="grid-column: 2 / 3; display: flex; flex-direction: column;">
+        
+        <div id="view-diagnostics" class="view-section active-view">
+            <div class="hero-chart panel">
+                <div style="display: flex; justify-content: space-between;">
+                    <div>
+                        <div class="label">KINEMATIC WAVE ANALYSIS</div>
+                        <div style="font-size: 1.1rem; font-weight: bold; margin-top: 5px;">REAL-TIME FREQUENCY MONITORING</div>
+                    </div>
+                    <div id="sim-controls" style="display:flex; gap:10px;">
+                        <button onclick="simMode='stable'" style="background:transparent; color:#E2E8F0; border:1px solid #64748B; padding:5px 15px; cursor:pointer; border-radius:4px;">Stable</button>
+                        <button onclick="simMode='vibration'" style="background:transparent; color:var(--accent-amber); border:1px solid var(--accent-amber); padding:5px 15px; cursor:pointer; border-radius:4px;">Vibration</button>
+                        <button onclick="triggerImpact()" style="background:transparent; color:var(--accent-cyan); border:1px solid var(--accent-cyan); padding:5px 15px; cursor:pointer; border-radius:4px;">Force Impact</button>
+                    </div>
+                </div>
+                <div class="chart-container"><canvas id="kinematicChart"></canvas></div>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="panel"><div class="label">NODE UPTIME</div><div class="value" id="uptime">00:00:00</div><div class="micro-data">SYS_CLOCK_SYNC</div></div>
+                <div class="panel"><div class="label">DATA THROUGHPUT</div><div class="value" id="throughput">1.28 <span style="font-size: 1rem;">Mb/s</span></div><div class="micro-data" style="color: var(--accent-cyan);">↑ 0.12 MB/S OFFSET</div></div>
+                <div class="panel"><div class="label">BUFFER STATUS</div><div class="value" style="color: var(--accent-green); font-weight: bold; font-size: 1.5rem;">● HEALTHY</div><div class="micro-data">LATENCY 4MS</div></div>
+                <div class="panel"><div class="label">SYSTEM TEMP</div><div class="value">38.4 <span style="font-size: 1rem;">°C</span></div><div class="micro-data">MARGIN: 42.0 °C</div></div>
+            </div>
+        </div>
+
+        <div id="view-network" class="view-section panel">
+            <div class="label">SATELLITE UPLINK STATUS</div>
+            <h2 style="margin-top: 10px; margin-bottom: 20px;">NODE COMMUNICATION ARRAY</h2>
+            <div style="font-family: var(--font-mono); color: var(--accent-green); line-height: 1.8;">
+                > Pinging VajraNode-01... SUCCESS (12ms)<br>
+                > Establishing Handshake... SUCCESS<br>
+                > I2C Bus Status... VERIFIED<br>
+                > Edge AI Model Status... LOADED (Memory: 48%)<br>
+                > Waiting for telemetry stream... ACTIVE
+            </div>
+        </div>
+
+        <div id="view-logs" class="view-section panel">
+            <div class="label">RAW SERIAL OUTPUT (M/S²)</div>
+            <div id="raw-terminal" style="font-family: var(--font-mono); color: var(--text-muted); line-height: 1.5; margin-top: 10px; height: 100%; overflow: hidden;">
+                </div>
+        </div>
+
+    </div>
+
+    <div class="right-sidebar" style="grid-column: 3 / 4;">
+        <div class="panel">
+            <div class="label">KINETIC TELEMETRY</div>
+            <div class="progress-container">
+                <div class="progress-row"><span>AXIS X</span><span id="txt-x">0.00 m/s²</span></div>
+                <div class="progress-bar-bg"><div class="progress-fill fill-cyan"></div></div>
+                
+                <div class="progress-row"><span>AXIS Y</span><span id="txt-y">0.00 m/s²</span></div>
+                <div class="progress-bar-bg"><div class="progress-fill fill-amber"></div></div>
+                
+                <div class="progress-row"><span>AXIS Z</span><span id="txt-z">9.81 m/s²</span></div>
+                <div class="progress-bar-bg"><div class="progress-fill fill-green"></div></div>
+            </div>
+        </div>
+
+        <div class="panel" style="display: flex; flex-direction: column; flex: 1;">
+            <div class="label" style="margin-bottom: 15px;">EVENT STREAM</div>
+            <div class="event-log" id="event-logger">
+                <div class="event-item"><div class="event-title">System Initialization</div><div class="event-time">Root protocols active</div></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // MISSION CONTROL: HARDWARE VS SIMULATION
+        // ==========================================
+        // Change this to "HARDWARE" when your new MPU6050 arrives!
+        const DATA_MODE = "SIMULATION"; 
+        
+        let simMode = 'stable'; 
+        let tick = 0;
+
+        // --- UI Navigation Logic (The Tabs) ---
+        function switchTab(viewId, clickedElement) {
+            // Hide all views
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active-view'));
+            // Remove active class from all tabs
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            // Show selected view and highlight tab
+            document.getElementById(viewId).classList.add('active-view');
+            clickedElement.classList.add('active');
+        }
+
+        // --- Event Logging System ---
+        function logEvent(title, desc, type = 'normal') {
+            const logContainer = document.getElementById('event-logger');
+            const timeStr = new Date().toLocaleTimeString();
+            const item = document.createElement('div');
+            item.className = `event-item ${type}`;
+            if(type === 'warning') item.style.background = 'rgba(255, 176, 0, 0.05)';
+            item.innerHTML = `<div class="event-title" ${type === 'warning' ? 'style="color:#FFB000;"' : ''}>${title}</div><div class="event-time">${timeStr} | ${desc}</div>`;
+            logContainer.insertBefore(item, logContainer.firstChild);
+        }
+
+        function triggerImpact() {
+            simMode = 'impact';
+            logEvent("Kinematic Shock Event", "High-G impact threshold crossed", "warning");
+            document.getElementById('global-status').innerText = "● IMPACT DETECTED";
+            document.getElementById('global-status').style.color = "var(--accent-amber)";
+            setTimeout(() => {
+                document.getElementById('global-status').innerText = "● SYSTEM ONLINE";
+                document.getElementById('global-status').style.color = "var(--accent-green)";
+            }, 3000);
+        }
+
+        // --- Chart & Data Setup ---
+        const ctx = document.getElementById('kinematicChart').getContext('2d');
+        let xData = Array(60).fill(0), yData = Array(60).fill(0), zData = Array(60).fill(9.8);
+
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: Array.from({length: 60}, (_, i) => i), datasets: [
+                { label: 'X', borderColor: '#00F0FF', borderWidth: 2, tension: 0.3, pointRadius: 0, data: xData },
+                { label: 'Y', borderColor: '#FFB000', borderWidth: 2, tension: 0.3, pointRadius: 0, data: yData },
+                { label: 'Z', borderColor: '#00E676', borderWidth: 2, tension: 0.3, pointRadius: 0, data: zData }
+            ]},
+            options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { min: -20, max: 40, display: false } } }
+        });
+
+        // --- The 20Hz Core Loop ---
+        setInterval(() => {
+            let accX = 0, accY = 0, accZ = 9.81;
+
+            if (DATA_MODE === "SIMULATION") {
+                tick++;
+                accX = (Math.sin(tick * 0.2) * 0.4) + (Math.random() - 0.5) * 0.2;
+                accY = (Math.cos(tick * 0.15) * 0.3) + (Math.random() - 0.5) * 0.2;
+                accZ = 9.8 + (Math.sin(tick * 0.1) * 0.2) + (Math.random() - 0.5) * 0.2;
+
+                if (simMode === 'vibration') {
+                    accX += (Math.random() - 0.5) * 4.5; accY += (Math.random() - 0.5) * 3.0; accZ += (Math.random() - 0.5) * 5.0;
+                } else if (simMode === 'impact') {
+                    accX += (Math.random() - 0.5) * 15; accY += (Math.random() - 0.5) * 12; accZ += 25 + (Math.random() * 15);
+                    simMode = 'stable'; // Auto-recover
+                }
+            } else if (DATA_MODE === "HARDWARE") {
+                // TODO: When sensor arrives, fetch data from Web Serial API here
+                // accX = serialData.x;
+            }
+
+            // Update Arrays
+            xData.push(accX); xData.shift();
+            yData.push(accY); yData.shift();
+            zData.push(accZ); zData.shift();
+            chart.update();
+
+            // Update UI Bars
+            const maxG = 20;
+            document.querySelector('.fill-cyan').style.width = `${Math.min(100, (Math.abs(accX)/maxG)*100)}%`;
+            document.querySelector('.fill-amber').style.width = `${Math.min(100, (Math.abs(accY)/maxG)*100)}%`;
+            document.querySelector('.fill-green').style.width = `${Math.min(100, (Math.abs(accZ)/maxG)*100)}%`;
+            
+            document.getElementById('txt-x').innerText = `${accX.toFixed(2)} m/s²`;
+            document.getElementById('txt-y').innerText = `${accY.toFixed(2)} m/s²`;
+            document.getElementById('txt-z').innerText = `${accZ.toFixed(2)} m/s²`;
+
+            // Populate Raw Log View
+            const rawTerm = document.getElementById('raw-terminal');
+            rawTerm.innerHTML = `> ${accX.toFixed(2)}, ${accY.toFixed(2)}, ${accZ.toFixed(2)}<br>` + rawTerm.innerHTML;
+            if(rawTerm.innerHTML.length > 1000) rawTerm.innerHTML = rawTerm.innerHTML.substring(0, 1000);
+
+        }, 50);
+
+        // Uptime Clock
+        let seconds = 0;
+        setInterval(() => {
+            seconds++;
+            document.getElementById('uptime').innerText = `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+            document.getElementById('throughput').innerHTML = `${(1.2 + Math.random()*0.2).toFixed(2)} <span style="font-size: 1rem;">Mb/s</span>`;
+        }, 1000);
+    </script>
+</body>
+</html>
