@@ -260,11 +260,35 @@
 
         // Uptime Clock
         let seconds = 0;
+                // --- The 20Hz Core Loop (DIGITAL TWIN OF C++ FIRMWARE) ---
+        let timeVal = 0; // Matches the timeVal in C++  
         setInterval(() => {
-            seconds++;
-            document.getElementById('uptime').innerText = `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-            document.getElementById('throughput').innerHTML = `${(1.2 + Math.random()*0.2).toFixed(2)} <span style="font-size: 1rem;">Mb/s</span>`;
-        }, 1000);
+            let accX = 0, accY = 0, accZ = 9.81;
+
+            if (DATA_MODE === "SIMULATION") {
+                timeVal += 0.1; // 1:1 Match with C++ timing
+                
+                if (simMode === 'stable') {
+                    // HEALTHY STATE (Matches C++ isBroken = false)
+                    // Math.random() - 0.5 gives a range from -0.5 to 0.5, multiplied by 0.2 gives -0.1 to 0.1
+                    accX = Math.sin(timeVal) + (Math.random() - 0.5) * 0.2;
+                    accY = Math.cos(timeVal * 0.5) + (Math.random() - 0.5) * 0.2;
+                    accZ = 9.81 + (Math.sin(timeVal * 2.0) * 0.5);
+                } 
+                else if (simMode === 'vibration' || simMode === 'impact') {
+                    // BROKEN/ANOMALY STATE (Matches C++ isBroken = true)
+                    accX = (Math.sin(timeVal * 3.0) * 5.0) + (Math.random() - 0.5) * 4.0;
+                    accY = (Math.cos(timeVal * 1.5) * 5.0) + (Math.random() - 0.5) * 4.0;
+                    accZ = 9.81 + (Math.sin(timeVal * 4.0) * 3.0);
+                    
+                    if (simMode === 'impact') {
+                        accZ += 20; // Add a massive one-time vertical shock
+                        simMode = 'stable'; // Auto-recover after impact
+                    }
+                }
+            } else if (DATA_MODE === "HARDWARE") {
+                // TODO: When sensor arrives, fetch data from Web Serial API here
+            }
     </script>
 </body>
 </html>
