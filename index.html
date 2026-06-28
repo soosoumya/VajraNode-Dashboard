@@ -157,23 +157,20 @@
         </div>
     </div>
 
-    <script>
+<script>
         // ==========================================
         // MISSION CONTROL: HARDWARE VS SIMULATION
         // ==========================================
-        // Change this to "HARDWARE" when your new MPU6050 arrives!
         const DATA_MODE = "SIMULATION"; 
         
         let simMode = 'stable'; 
         let tick = 0;
+        let timeVal = 0; // Matches the timeVal in C++
 
-        // --- UI Navigation Logic (The Tabs) ---
+        // --- UI Navigation Logic ---
         function switchTab(viewId, clickedElement) {
-            // Hide all views
             document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active-view'));
-            // Remove active class from all tabs
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            // Show selected view and highlight tab
             document.getElementById(viewId).classList.add('active-view');
             clickedElement.classList.add('active');
         }
@@ -200,7 +197,7 @@
             }, 3000);
         }
 
-        // --- Chart & Data Setup ---
+        // --- Chart Setup ---
         const ctx = document.getElementById('kinematicChart').getContext('2d');
         let xData = Array(60).fill(0), yData = Array(60).fill(0), zData = Array(60).fill(9.8);
 
@@ -214,28 +211,34 @@
             options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { min: -20, max: 40, display: false } } }
         });
 
-        // --- The 20Hz Core Loop ---
+        // --- The 20Hz Core Loop (DIGITAL TWIN) ---
         setInterval(() => {
             let accX = 0, accY = 0, accZ = 9.81;
 
             if (DATA_MODE === "SIMULATION") {
-                tick++;
-                accX = (Math.sin(tick * 0.2) * 0.4) + (Math.random() - 0.5) * 0.2;
-                accY = (Math.cos(tick * 0.15) * 0.3) + (Math.random() - 0.5) * 0.2;
-                accZ = 9.8 + (Math.sin(tick * 0.1) * 0.2) + (Math.random() - 0.5) * 0.2;
-
-                if (simMode === 'vibration') {
-                    accX += (Math.random() - 0.5) * 4.5; accY += (Math.random() - 0.5) * 3.0; accZ += (Math.random() - 0.5) * 5.0;
-                } else if (simMode === 'impact') {
-                    accX += (Math.random() - 0.5) * 15; accY += (Math.random() - 0.5) * 12; accZ += 25 + (Math.random() * 15);
-                    simMode = 'stable'; // Auto-recover
+                timeVal += 0.1; // 1:1 Match with C++ timing
+                
+                if (simMode === 'stable') {
+                    // HEALTHY STATE
+                    accX = Math.sin(timeVal) + (Math.random() - 0.5) * 0.2;
+                    accY = Math.cos(timeVal * 0.5) + (Math.random() - 0.5) * 0.2;
+                    accZ = 9.81 + (Math.sin(timeVal * 2.0) * 0.5);
+                } else if (simMode === 'vibration' || simMode === 'impact') {
+                    // BROKEN/ANOMALY STATE
+                    accX = (Math.sin(timeVal * 3.0) * 5.0) + (Math.random() - 0.5) * 4.0;
+                    accY = (Math.cos(timeVal * 1.5) * 5.0) + (Math.random() - 0.5) * 4.0;
+                    accZ = 9.81 + (Math.sin(timeVal * 4.0) * 3.0);
+                    
+                    if (simMode === 'impact') {
+                        accZ += 20; // Massive shock
+                        simMode = 'stable'; // Auto-recover
+                    }
                 }
             } else if (DATA_MODE === "HARDWARE") {
                 // TODO: When sensor arrives, fetch data from Web Serial API here
-                // accX = serialData.x;
             }
 
-            // Update Arrays
+            // Update Arrays (THIS IS WHAT WAS MISSING!)
             xData.push(accX); xData.shift();
             yData.push(accY); yData.shift();
             zData.push(accZ); zData.shift();
@@ -256,39 +259,16 @@
             rawTerm.innerHTML = `> ${accX.toFixed(2)}, ${accY.toFixed(2)}, ${accZ.toFixed(2)}<br>` + rawTerm.innerHTML;
             if(rawTerm.innerHTML.length > 1000) rawTerm.innerHTML = rawTerm.innerHTML.substring(0, 1000);
 
-        }, 50);
+        }, 50); 
 
         // Uptime Clock
         let seconds = 0;
-                // --- The 20Hz Core Loop (DIGITAL TWIN OF C++ FIRMWARE) ---
-        let timeVal = 0; // Matches the timeVal in C++  
         setInterval(() => {
-            let accX = 0, accY = 0, accZ = 9.81;
-
-            if (DATA_MODE === "SIMULATION") {
-                timeVal += 0.1; // 1:1 Match with C++ timing
-                
-                if (simMode === 'stable') {
-                    // HEALTHY STATE (Matches C++ isBroken = false)
-                    // Math.random() - 0.5 gives a range from -0.5 to 0.5, multiplied by 0.2 gives -0.1 to 0.1
-                    accX = Math.sin(timeVal) + (Math.random() - 0.5) * 0.2;
-                    accY = Math.cos(timeVal * 0.5) + (Math.random() - 0.5) * 0.2;
-                    accZ = 9.81 + (Math.sin(timeVal * 2.0) * 0.5);
-                } 
-                else if (simMode === 'vibration' || simMode === 'impact') {
-                    // BROKEN/ANOMALY STATE (Matches C++ isBroken = true)
-                    accX = (Math.sin(timeVal * 3.0) * 5.0) + (Math.random() - 0.5) * 4.0;
-                    accY = (Math.cos(timeVal * 1.5) * 5.0) + (Math.random() - 0.5) * 4.0;
-                    accZ = 9.81 + (Math.sin(timeVal * 4.0) * 3.0);
-                    
-                    if (simMode === 'impact') {
-                        accZ += 20; // Add a massive one-time vertical shock
-                        simMode = 'stable'; // Auto-recover after impact
-                    }
-                }
-            } else if (DATA_MODE === "HARDWARE") {
-                // TODO: When sensor arrives, fetch data from Web Serial API here
-            }
+            seconds++;
+            document.getElementById('uptime').innerText = `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+            document.getElementById('throughput').innerHTML = `${(1.2 + Math.random()*0.2).toFixed(2)} <span style="font-size: 1rem;">Mb/s</span>`;
+        }, 1000);
     </script>
+    
 </body>
 </html>
